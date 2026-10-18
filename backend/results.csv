@@ -1,0 +1,4 @@
+Model/Experiment,Dataset,Accuracy,Precision,Recall,F1-Score,ROC-AUC,PR-AUC,FPR,FNR,TP,FP,TN,FN
+Isolation Forest,Constructed Syslog Scenario Evaluation Dataset,0.9133,0.7952,0.88,0.8354,0.9752,0.9187,0.0756,0.12,66,17,208,9
+Isolation Forest + One-Class SVM Consensus Validation,Constructed Syslog Scenario Evaluation Dataset,0.8333,0.8049,0.44,0.569,0.8424,0.6273,0.0356,0.56,33,8,217,42
+One-Class SVM,Constructed Syslog Scenario Evaluation Dataset,0.7167,0.4468,0.56,0.497,0.7612,0.4311,0.2311,0.44,42,52,173,33

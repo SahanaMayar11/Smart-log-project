@@ -1,0 +1,99 @@
+{
+  "evaluation_metadata": {
+    "dataset_name": "Constructed Syslog Scenario Evaluation Dataset",
+    "dataset_description": "1000-sample deterministic scenario dataset (750 normal, 250 anomalous) constructed to provide reproducible evaluation without fabricated external labels.",
+    "total_samples": 1000,
+    "train_samples": 700,
+    "test_samples": 300,
+    "feature_schema": [
+      "event_frequency",
+      "sequence_length",
+      "error_count",
+      "error_pattern",
+      "login_attempts",
+      "failed_login_attempts",
+      "warning_count",
+      "unknown_events"
+    ],
+    "random_seed": 42,
+    "split_ratio": "70% Train / 30% Held-Out Test (Unstratified, strictly unsupervised)",
+    "data_leakage_protection": "Training medians strictly applied to test split"
+  },
+  "experiments": {
+    "experiment_1_isolation_forest_alone": {
+      "model_name": "Isolation Forest",
+      "hyperparameters": {
+        "n_estimators": 100,
+        "contamination": 0.25,
+        "random_state": 42
+      },
+      "metrics": {
+        "accuracy": 0.9133,
+        "precision": 0.7952,
+        "recall": 0.88,
+        "f1_score": 0.8354,
+        "roc_auc": 0.9752,
+        "pr_auc": 0.9187,
+        "false_positive_rate": 0.0756,
+        "false_negative_rate": 0.12,
+        "confusion_matrix": {
+          "true_negatives": 208,
+          "false_positives": 17,
+          "false_negatives": 9,
+          "true_positives": 66
+        }
+      }
+    },
+    "experiment_2_isolation_forest_plus_ocsvm_consensus": {
+      "model_name": "Isolation Forest + One-Class SVM Consensus Validation",
+      "strategy": "Dual-model consensus validation (positive anomaly only when both agree)",
+      "consensus_state_distribution": {
+        "Consensus Normal": 164,
+        "Model Disagreement: One-Class SVM": 53,
+        "Model Disagreement: Isolation Forest": 42,
+        "Consensus Anomaly": 41
+      },
+      "false_positive_reduction_percent": 52.94,
+      "metrics": {
+        "accuracy": 0.8333,
+        "precision": 0.8049,
+        "recall": 0.44,
+        "f1_score": 0.569,
+        "roc_auc": 0.8424,
+        "pr_auc": 0.6273,
+        "false_positive_rate": 0.0356,
+        "false_negative_rate": 0.56,
+        "confusion_matrix": {
+          "true_negatives": 217,
+          "false_positives": 8,
+          "false_negatives": 42,
+          "true_positives": 33
+        }
+      }
+    },
+    "experiment_3_one_class_svm_alone": {
+      "model_name": "One-Class SVM",
+      "hyperparameters": {
+        "nu": 0.25,
+        "kernel": "rbf",
+        "gamma": "scale"
+      },
+      "metrics": {
+        "accuracy": 0.7167,
+        "precision": 0.4468,
+        "recall": 0.56,
+        "f1_score": 0.497,
+        "roc_auc": 0.7612,
+        "pr_auc": 0.4311,
+        "false_positive_rate": 0.2311,
+        "false_negative_rate": 0.44,
+        "confusion_matrix": {
+          "true_negatives": 173,
+          "false_positives": 52,
+          "false_negatives": 33,
+          "true_positives": 42
+        }
+      }
+    }
+  }
+}

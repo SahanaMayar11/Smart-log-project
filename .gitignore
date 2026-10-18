@@ -1,0 +1,38 @@
+﻿# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Builds & Outputs
+dist/
+frontend/dist/
+dist-ssr/
+*.egg-info/
+
+# Python & Environment
+__pycache__/
+backend/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+
+# HDFS Dataset / Large Preprocessed Files
+backend/Dataset_HDFS/HDFS_v1/preprocessed/Event_traces.csv
+backend/Dataset_HDFS/HDFS_v1/preprocessed/Event_occurrence_matrix.csv
+backend/Dataset_HDFS/HDFS_v1/preprocessed/HDFS.npz
+
+# Log files & Database
+*.log
+backend/*.log
+*.db
+backend/*.db
+backend/smartlog.db
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

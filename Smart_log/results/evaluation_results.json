@@ -1,0 +1,78 @@
+{
+  "objective_1": {
+    "status": "PASS",
+    "records_preprocessed": 10000,
+    "missing_values_handled": 1,
+    "invalid_values_handled": 3,
+    "feature_schema": [
+      "event_frequency",
+      "sequence_length",
+      "error_count",
+      "error_pattern",
+      "login_attempts",
+      "failed_login_attempts",
+      "warning_count",
+      "unknown_events"
+    ]
+  },
+  "objective_2": {
+    "status": "PASS",
+    "primary_model": {
+      "model_name": "Isolation Forest",
+      "total_samples": 3000,
+      "normal_samples": 2908,
+      "anomalous_samples": 92,
+      "detected_anomalies": 83,
+      "detected_anomaly_percentage": 2.77,
+      "accuracy": 98.1,
+      "precision": 71.08,
+      "recall": 64.13,
+      "f1_score": 67.43,
+      "roc_auc": 0.987,
+      "pr_auc": 0.6461,
+      "false_positive_rate": 0.83,
+      "false_negative_rate": 35.87,
+      "confusion_matrix": {
+        "true_negatives": 2884,
+        "false_positives": 24,
+        "false_negatives": 33,
+        "true_positives": 59
+      }
+    },
+    "secondary_validator": {
+      "model_name": "One-Class SVM",
+      "total_samples": 3000,
+      "normal_samples": 2908,
+      "anomalous_samples": 92,
+      "detected_anomalies": 1648,
+      "detected_anomaly_percentage": 54.93,
+      "accuracy": 47.2,
+      "precision": 4.73,
+      "recall": 84.78,
+      "f1_score": 8.97,
+      "roc_auc": 0.7821,
+      "pr_auc": 0.4795,
+      "false_positive_rate": 53.99,
+      "false_negative_rate": 15.22,
+      "confusion_matrix": {
+        "true_negatives": 1338,
+        "false_positives": 1570,
+        "false_negatives": 14,
+        "true_positives": 78
+      }
+    },
+    "model_comparison": {
+      "total_events": 3000,
+      "agreements": 1393,
+      "disagreements": 1607,
+      "agreement_rate_percent": 46.43,
+      "consensus_counts": {
+        "Consensus Normal (High Confidence Normal)": 1331,
+        "Consensus Anomaly (High Confidence Threat)": 62,
+        "Disagreement (Flagged by IF Only)": 21,
+        "Disagreement (Flagged by OCSVM Only)": 1586
+      }
+    }
+  },
+  "pipeline_status": "PASS"
+}
