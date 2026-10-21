@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, FileText, ChevronLeft, ChevronRight, Eye, X } from 'lucide-react';
+import { Search, Filter, FileText, ChevronLeft, ChevronRight, Eye, X, AlertTriangle, CheckCircle, ShieldAlert, Lightbulb, Info, User, Server } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import { fetchParsedLogs } from '../services/api';
 
@@ -29,11 +29,13 @@ const LogAnalysisPage = () => {
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch = 
-      log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.service.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.hostname.toLowerCase().includes(searchTerm.toLowerCase());
+      (log.message || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.service || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.hostname || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.user || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.what_happened || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesLevel = levelFilter === 'ALL' || log.log_level.toUpperCase() === levelFilter.toUpperCase();
+    const matchesLevel = levelFilter === 'ALL' || (log.log_level || '').toUpperCase() === levelFilter.toUpperCase();
     return matchesSearch && matchesLevel;
   });
 
@@ -45,9 +47,9 @@ const LogAnalysisPage = () => {
       <div className="bg-[#081225] p-6 rounded-2xl border border-slate-800 backdrop-blur-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-white flex items-center gap-2.5">
-            <FileText className="w-5 h-5 text-[#00E5FF]" /> Syslog Records Explorer
+            <FileText className="w-5 h-5 text-[#00E5FF]" /> Syslog Records Explorer & Forensic Inspection
           </h1>
-          <p className="text-xs text-[#94A3B8] mt-1">Multi-attribute search, level filtering, and raw log message inspection console.</p>
+          <p className="text-xs text-[#94A3B8] mt-1">Multi-attribute search, level filtering, anomaly inspection, and human-readable SHAP insights.</p>
         </div>
       </div>
 
@@ -58,7 +60,7 @@ const LogAnalysisPage = () => {
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
             <input
               type="text"
-              placeholder="Search message, service (sshd, kernel), or hostname..."
+              placeholder="Search message, service, user, or explanation..."
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:border-[#00E5FF] focus:outline-none transition-all font-mono"
@@ -98,7 +100,8 @@ const LogAnalysisPage = () => {
                     <th className="p-3.5">Timestamp</th>
                     <th className="p-3.5">Hostname</th>
                     <th className="p-3.5">Service</th>
-                    <th className="p-3.5">Log Level</th>
+                    <th className="p-3.5">Level</th>
+                    <th className="p-3.5">ML Status</th>
                     <th className="p-3.5">Message Snippet</th>
                     <th className="p-3.5 text-center">Action</th>
                   </tr>
@@ -111,15 +114,28 @@ const LogAnalysisPage = () => {
                       <td className="p-3.5 text-white font-semibold">{log.hostname}</td>
                       <td className="p-3.5 text-purple-400">{log.service}</td>
                       <td className="p-3.5">
-                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          log.log_level.toUpperCase() === 'ERROR' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
-                          log.log_level.toUpperCase() === 'WARNING' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          (log.log_level || '').toUpperCase() === 'ERROR' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                          (log.log_level || '').toUpperCase() === 'WARNING' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
                           'bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/30'
                         }`}>
-                          {log.log_level}
+                          {log.log_level || 'INFO'}
                         </span>
                       </td>
-                      <td className="p-3.5 text-slate-300 max-w-xs truncate">{log.message}</td>
+                      <td className="p-3.5">
+                        {log.is_anomaly === 1 ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1 w-fit">
+                            <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />
+                            Anomaly {log.anomaly_score ? `(${(log.anomaly_score * 100).toFixed(0)}%)` : ''}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 w-fit">
+                            <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                            Normal
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-slate-300 max-w-xs truncate">{log.what_happened || log.message}</td>
                       <td className="p-3.5 text-center">
                         <button
                           onClick={() => setSelectedLog(log)}
@@ -159,27 +175,113 @@ const LogAnalysisPage = () => {
         )}
       </GlassCard>
 
-      {/* Detail Inspection Modal */}
+      {/* Detail Inspection Modal with Plain-English SHAP Explainability */}
       {selectedLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <GlassCard className="max-w-xl w-full p-6 border-[#00E5FF]/40 glow-cyan relative space-y-4">
+          <GlassCard className="max-w-2xl w-full p-6 border-[#00E5FF]/40 glow-cyan relative space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white font-mono">Log Record Details #{selectedLog.id}</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-base font-bold text-white font-mono">Log Record Details #{selectedLog.id}</h3>
+                {selectedLog.is_anomaly === 1 ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-red-400" />
+                    Suspicious Anomaly ({selectedLog.anomaly_score?.toFixed(4) || 'Flagged'})
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-400" />
+                    Normal Baseline
+                  </span>
+                )}
+              </div>
               <button onClick={() => setSelectedLog(null)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs font-mono">
-              <div><span className="text-[#94A3B8]">Timestamp:</span> <strong className="text-white">{selectedLog.timestamp}</strong></div>
-              <div><span className="text-[#94A3B8]">Hostname:</span> <strong className="text-white">{selectedLog.hostname}</strong></div>
-              <div><span className="text-[#94A3B8]">Service Daemon:</span> <strong className="text-purple-400">{selectedLog.service}</strong></div>
-              <div><span className="text-[#94A3B8]">Log Severity Level:</span> <strong className="text-[#00E5FF]">{selectedLog.log_level}</strong></div>
-              <div className="pt-2">
-                <span className="text-[#94A3B8] block mb-1">Full Log Payload Message:</span>
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-[11px] leading-relaxed break-words">
-                  {selectedLog.message}
-                </div>
+            {/* WHAT HAPPENED (PLAIN ENGLISH) */}
+            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-[#00E5FF] flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-[#00E5FF]" /> What Happened
+              </span>
+              <p className="text-xs text-white leading-relaxed font-sans">
+                {selectedLog.what_happened || selectedLog.description || selectedLog.message}
+              </p>
+            </div>
+
+            {/* WHY SUSPICIOUS / SHAP EXPLANATION (IF ANOMALY) */}
+            {selectedLog.is_anomaly === 1 && (
+              <div className="p-4 rounded-xl bg-red-950/20 border border-red-500/30 space-y-2">
+                <span className="text-[10px] uppercase font-bold text-red-400 flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Why Suspicious (SHAP Root-Cause)
+                </span>
+                <p className="text-xs text-red-200 leading-relaxed font-sans">
+                  {selectedLog.why_suspicious || 'Behavioral sequence metrics deviated significantly from standard operational distribution.'}
+                </p>
+
+                {selectedLog.top_3_human_reasons && selectedLog.top_3_human_reasons.length > 0 && (
+                  <div className="pt-2 border-t border-red-500/20 space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold uppercase text-red-300 block">
+                      Top Behavioral Factors:
+                    </span>
+                    {selectedLog.top_3_human_reasons.map((reason, idx) => (
+                      <div key={idx} className="text-[11px] font-mono text-red-300/90 flex items-start gap-1.5">
+                        <span className="text-red-400">•</span>
+                        <span>{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* RECOMMENDED ACTION */}
+            {selectedLog.recommended_action && (
+              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1.5">
+                  <Lightbulb className="w-3.5 h-3.5 text-emerald-400" /> Recommended Action
+                </span>
+                <p className="text-xs text-emerald-200 leading-relaxed font-sans">
+                  {selectedLog.recommended_action}
+                </p>
+              </div>
+            )}
+
+            {/* FORENSIC METADATA GRID */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-slate-900/50 border border-slate-800 text-xs font-mono">
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">Timestamp</span>
+                <strong className="text-white text-[11px]">{selectedLog.timestamp}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">Host / Computer</span>
+                <strong className="text-white text-[11px]">{selectedLog.computer || selectedLog.hostname}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">Service / Daemon</span>
+                <strong className="text-purple-400 text-[11px]">{selectedLog.service}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">Severity Level</span>
+                <strong className="text-[#00E5FF] text-[11px]">{selectedLog.log_level}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">User / Account</span>
+                <strong className="text-slate-200 text-[11px]">{selectedLog.user || 'N/A'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 text-[10px] block uppercase">Channel / Event ID</span>
+                <strong className="text-slate-200 text-[11px]">
+                  {selectedLog.channel || 'syslog'} {selectedLog.event_id ? `(#${selectedLog.event_id})` : ''}
+                </strong>
+              </div>
+            </div>
+
+            {/* RAW LOG PAYLOAD MESSAGE */}
+            <div className="space-y-1 text-xs font-mono">
+              <span className="text-[#94A3B8] block text-[10px] uppercase">Full Log Payload Message:</span>
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-[11px] leading-relaxed break-words max-h-36 overflow-y-auto">
+                {selectedLog.message}
               </div>
             </div>
           </GlassCard>

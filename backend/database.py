@@ -164,22 +164,15 @@ def init_db():
             pass
 
     # Ensure SHAP human-readable explanation columns exist
-    try:
-        cursor.execute("ALTER TABLE shap_explanations ADD COLUMN what_happened TEXT")
-    except Exception:
-        pass
-    try:
-        cursor.execute("ALTER TABLE shap_explanations ADD COLUMN why_suspicious TEXT")
-    except Exception:
-        pass
-    try:
-        cursor.execute("ALTER TABLE shap_explanations ADD COLUMN recommended_action TEXT")
-    except Exception:
-        pass
-    try:
-        cursor.execute("ALTER TABLE shap_explanations ADD COLUMN top_3_human_reasons TEXT")
-    except Exception:
-        pass
+    for col_name in [
+        'what_happened', 'why_suspicious', 'recommended_action', 'top_3_human_reasons',
+        'application_source', 'what_it_means', 'why_flagged', 'evidence',
+        'risk_assessment', 'limitations_uncertainty', 'technical_details'
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE shap_explanations ADD COLUMN {col_name} TEXT")
+        except Exception:
+            pass
 
     # Ensure simulation tracking columns exist
     sim_columns = [

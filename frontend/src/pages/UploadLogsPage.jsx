@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Play, 
+  Pause,
   Square, 
   Activity, 
   Monitor, 
@@ -19,6 +20,8 @@ import {
   Cpu, 
   RefreshCw, 
   Eye, 
+  Maximize2,
+  X,
   ArrowRight,
   Printer,
   LayoutDashboard,
@@ -65,6 +68,346 @@ ChartJS.register(
   Title
 );
 
+const ShapExplanationCard = ({ evt, isAnomaly, providerStr, onOpenModal, isModalView = false }) => {
+  const [showTech, setShowTech] = useState(false);
+
+  const whatHappened = evt.what_happened || evt.description || evt.message || `Windows event logged from ${providerStr}`;
+  const appSource = evt.application_source || evt.source || evt.provider || evt.channel || 'Windows System Telemetry';
+  const whatMeans = evt.what_it_means || (isAnomaly ? 'Security behavioral deviation flagged for analyst review.' : 'Routine operating system baseline activity.');
+  const whyFlagged = evt.why_flagged || evt.why_suspicious || (isAnomaly ? 'Unusual behavioral deviation detected by Isolation Forest.' : 'This activity conforms to expected baseline behavior.');
+  const evidence = evt.evidence || `Event ID: ${evt.event_id || 4688} | Record ID: ${evt.record_id || evt.log_id || 'N/A'} | User: ${evt.user || 'User'} | Host: ${evt.computer || 'Host'}`;
+  const riskAssessment = evt.risk_assessment || (isAnomaly ? 'Medium to High' : 'Low / Normal');
+  const recommendedAction = evt.recommended_action || (isAnomaly ? 'Investigate process integrity and verify administrator execution context.' : 'No action required. Continue standard operational monitoring.');
+  const limitations = evt.limitations_uncertainty || 'Log evidence verifies that this event occurred with the recorded attributes at the specified timestamp. Telemetry alone cannot establish human intent without corroborating physical presence or surrounding activity.';
+
+  const techDetails = evt.technical_details || {};
+  const featContrib = evt.feature_contributions || techDetails.feature_contributions || {};
+  const reasons = evt.top_3_human_reasons || techDetails.top_3_human_reasons || [];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className={`mt-3 p-4 rounded-xl bg-[#040c1a] border border-[#00E5FF]/40 space-y-3.5 font-sans text-xs ${isModalView ? 'shadow-none mt-0' : ''}`}
+    >
+      {/* CARD TOP BAR WITH MODAL BUTTON */}
+      {!isModalView && onOpenModal && (
+        <div className="flex justify-between items-center pb-2.5 border-b border-slate-800/80">
+          <span className="text-[11px] font-mono text-slate-400 font-semibold">
+            Event #{evt.record_id || evt.log_id || evt.id || 'N/A'} • {evt.timestamp || evt.time}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenModal(evt);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30 text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all shadow-sm hover:scale-105"
+            title="Open in Distraction-Free Modal"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>Open in Modal (Freeze View)</span>
+          </button>
+        </div>
+      )}
+
+      {/* 1. WHAT HAPPENED */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-[#00E5FF] uppercase tracking-wider flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5" /> 1. WHAT HAPPENED?
+        </span>
+        <p className="text-slate-100 leading-relaxed font-sans text-xs font-medium">
+          {whatHappened}
+        </p>
+      </div>
+
+      {/* 2. APPLICATION / SOURCE */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+          <Cpu className="w-3.5 h-3.5" /> 2. APPLICATION / SOURCE
+        </span>
+        <p className="text-slate-300 leading-relaxed font-mono text-[11px]">
+          {appSource}
+        </p>
+      </div>
+
+      {/* 3. WHAT IT MEANS */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5" /> 3. WHAT IT MEANS (SOC INTERPRETATION)
+        </span>
+        <p className="text-slate-300 leading-relaxed font-sans text-xs">
+          {whatMeans}
+        </p>
+      </div>
+
+      {/* 4. WHY SMART-LOG FLAGGED IT */}
+      <div className="space-y-1">
+        <span className={`text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 ${isAnomaly ? 'text-amber-400' : 'text-emerald-400'}`}>
+          <Sparkles className="w-3.5 h-3.5" /> {isAnomaly ? '4. WHY SMART-LOG FLAGGED IT (EXPLAINABLE AI)' : '4. WHY IS IT NORMAL (BASELINE BEHAVIOR)'}
+        </span>
+        <p className="text-slate-200 leading-relaxed font-sans text-xs">
+          {whyFlagged}
+        </p>
+      </div>
+
+      {/* 5. EVIDENCE */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+          <Eye className="w-3.5 h-3.5" /> 5. EVIDENCE (RECORD ATTRIBUTES)
+        </span>
+        <div className="p-2 rounded bg-slate-900/80 border border-slate-800 text-[11px] font-mono text-cyan-200">
+          {evidence}
+        </div>
+      </div>
+
+      {/* 6. RISK ASSESSMENT */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5" /> 6. RISK ASSESSMENT
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase ${
+            isAnomaly ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+          }`}>
+            {riskAssessment.split(':')[0]}
+          </span>
+          <span className="text-slate-300 text-xs">
+            {riskAssessment.includes(':') ? riskAssessment.split(':').slice(1).join(':').trim() : riskAssessment}
+          </span>
+        </div>
+      </div>
+
+      {/* 7. RECOMMENDED ACTION */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+          <CheckCircle className="w-3.5 h-3.5" /> 7. RECOMMENDED ACTION
+        </span>
+        <p className="text-slate-300 leading-relaxed font-sans text-xs">
+          {recommendedAction}
+        </p>
+      </div>
+
+      {/* 8. LIMITATIONS & UNCERTAINTY */}
+      <div className="space-y-1">
+        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5" /> 8. LIMITATIONS & UNCERTAINTY
+        </span>
+        <p className="text-slate-400 leading-relaxed font-sans text-[11px] italic">
+          {limitations}
+        </p>
+      </div>
+
+      {/* TECHNICAL SHAP DETAILS ACCORDION */}
+      <div className="pt-2 border-t border-slate-800/80">
+        <button
+          onClick={() => setShowTech(!showTech)}
+          className="flex items-center justify-between w-full text-slate-400 hover:text-white font-mono text-[11px] py-1"
+        >
+          <span className="flex items-center gap-1.5 text-purple-400 font-bold uppercase tracking-wider">
+            <Cpu className="w-3.5 h-3.5" /> Technical SHAP Details (Advanced ML View)
+          </span>
+          {showTech ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {showTech && (
+          <div className="mt-2 space-y-2 p-3 rounded-lg bg-black/60 border border-purple-500/30 font-mono text-[11px]">
+            <div className="flex justify-between text-slate-400 text-[10px]">
+              <span>Model: <strong className="text-purple-300">Isolation Forest (TreeExplainer)</strong></span>
+              <span>Primary Decision: <strong className={isAnomaly ? "text-red-400 font-bold" : "text-emerald-400 font-bold"}>{isAnomaly ? "Anomaly (-1)" : "Normal (1)"}</strong></span>
+            </div>
+
+            {reasons.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-800">
+                <span className="text-slate-400 text-[10px] uppercase block">Top Tree Isolation Drivers:</span>
+                <ul className="space-y-1 text-slate-300">
+                  {reasons.map((r, rIdx) => (
+                    <li key={rIdx} className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {Object.keys(featContrib).length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-slate-800">
+                <span className="text-slate-400 text-[10px] uppercase block">All 8 Behavioral Feature Contributions:</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+                  {Object.entries(featContrib).map(([k, v]) => (
+                    <div key={k} className="p-1 rounded bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-400 truncate mr-1">{k}:</span>
+                      <span className={`font-bold ${v > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {v > 0 ? `+${v}` : v}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+const IncidentBanner = ({ incidents }) => {
+  if (!incidents || incidents.length === 0) return null;
+
+  return (
+    <div className="space-y-3 mb-4">
+      {incidents.map((inc, iIdx) => (
+        <div
+          key={inc.incident_id || iIdx}
+          className="p-4 rounded-xl bg-gradient-to-r from-red-950/40 via-amber-950/30 to-slate-950 border-2 border-amber-500/60 shadow-xl space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 pb-2">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-400 animate-pulse shrink-0" />
+              <div>
+                <span className="text-xs font-mono font-black text-amber-400 uppercase tracking-widest block">
+                  SECURITY INCIDENT DETECTED • {inc.incident_id}
+                </span>
+                <h4 className="text-sm font-bold text-white tracking-wide">
+                  {inc.title}
+                </h4>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className={`px-2.5 py-1 rounded-full font-bold uppercase ${
+                inc.risk_level === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+              }`}>
+                Risk: {inc.risk_level}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-blue-500/20 text-cyan-300 border border-blue-500/40">
+                {inc.failure_count} Failed Attempts
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2.5 rounded-lg border border-amber-500/20">
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase block">Target Account</span>
+              <span className="text-amber-300 font-bold">{inc.account}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase block">Computer / Domain</span>
+              <span className="text-white font-medium">{inc.computer} ({inc.domain})</span>
+            </div>
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase block">Logon Type</span>
+              <span className="text-cyan-300 font-medium">{inc.logon_type}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase block">Subsequent Status</span>
+              <span className={inc.has_subsequent_success ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                {inc.has_subsequent_success ? "Unlocked / Logged On" : "No Successful Logon"}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-xs space-y-1.5 font-sans">
+            <p className="text-slate-200 leading-relaxed">
+              <strong className="text-amber-400 font-mono">Incident Summary: </strong>
+              {inc.incident_description}
+            </p>
+            <p className="text-slate-300 leading-relaxed">
+              <strong className="text-emerald-400 font-mono">Recommended Action: </strong>
+              {inc.recommended_action}
+            </p>
+            <p className="text-slate-400 text-[11px] italic">
+              <strong className="text-slate-500 font-mono not-italic">Investigation Limitations: </strong>
+              {inc.limitations}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1 font-mono text-[10px] text-slate-400">
+            <span>First Failure: <strong className="text-slate-200">{inc.first_failure_time}</strong></span>
+            <span>•</span>
+            <span>Last Failure: <strong className="text-slate-200">{inc.last_failure_time}</strong></span>
+            {inc.has_subsequent_success && (
+              <>
+                <span>•</span>
+                <span>Subsequent Success: <strong className="text-emerald-300">{inc.success_time}</strong></span>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ShapInspectionModal = ({ evt, onClose }) => {
+  if (!evt) return null;
+  const isAnomaly = evt.is_anomaly === 1;
+  const providerStr = `${evt.provider || 'Microsoft-Windows-Security-Auditing'}[${evt.event_id || 4688}]:`;
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+      <div className="relative w-full max-w-4xl max-h-[92vh] my-auto bg-[#070F20] border-2 border-[#00E5FF]/50 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-[#040C1A]">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl ${isAnomaly ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'}`}>
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-mono font-bold tracking-widest text-[#00E5FF] uppercase block">
+                FROZEN SOC INSPECTION • EVENT #{evt.record_id || evt.log_id || evt.id || 'N/A'}
+              </span>
+              <h3 className="text-base font-bold text-white tracking-wide">
+                Human-Readable SHAP Explainability & Threat Analysis
+              </h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className={`px-2.5 py-1 rounded text-xs font-mono font-bold uppercase ${
+              isAnomaly ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            }`}>
+              {isAnomaly ? 'ANOMALY DETECTED' : 'NORMAL ACTIVITY'}
+            </span>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 transition-all"
+              title="Close Inspection Modal (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto space-y-4">
+          <ShapExplanationCard evt={evt} isAnomaly={isAnomaly} providerStr={providerStr} isModalView={true} />
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-4 border-t border-slate-800 bg-[#040C1A] flex flex-wrap justify-between items-center gap-2 text-xs font-mono text-slate-400">
+          <span>Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">ESC</kbd> or click Close to return to stream.</span>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-all"
+          >
+            Close Analysis
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const UploadLogsPage = () => {
   const navigate = useNavigate();
 
@@ -79,12 +422,18 @@ const UploadLogsPage = () => {
   const [result24h, setResult24h] = useState(null);
   const [error24h, setError24h] = useState('');
   const [selectedHistoricalEvent, setSelectedHistoricalEvent] = useState(null);
+  const [expandedHistoricalKeys, setExpandedHistoricalKeys] = useState(new Set());
   const [search24h, setSearch24h] = useState('');
   const [severityFilter24h, setSeverityFilter24h] = useState('');
 
   // LIVE MONITOR STATE
   const [isMonitoring, setIsMonitoring] = useState(true);
   const [intervalSec, setIntervalSec] = useState(3);
+  const [autoPauseOnInspect, setAutoPauseOnInspect] = useState(true);
+  const [isStreamPaused, setIsStreamPaused] = useState(false);
+  const [queuedEventsCount, setQueuedEventsCount] = useState(0);
+  const [expandedLiveKeys, setExpandedLiveKeys] = useState(new Set());
+  const [modalEvent, setModalEvent] = useState(null);
   const [liveData, setLiveData] = useState({
     computer_name: 'Rocky',
     total_events_monitored: 0,
@@ -103,6 +452,62 @@ const UploadLogsPage = () => {
   const [rawViewMap, setRawViewMap] = useState({});
 
   const prevAnomalyCountRef = useRef(0);
+  const isStreamPausedRef = useRef(false);
+  isStreamPausedRef.current = isStreamPaused;
+  const prevTotalMonitoredRef = useRef(0);
+
+  // Robust Unique Event Key Resolver (Never returns bare array index)
+  const getEventKey = (evt, fallbackIdx) => {
+    if (!evt) return `evt-${fallbackIdx}`;
+    return evt.id 
+      || (evt.log_id ? `log-${evt.log_id}` : null) 
+      || (evt.record_id ? `rec-${evt.channel || 'sec'}-${evt.record_id}` : null) 
+      || (evt.timestamp ? `ts-${evt.timestamp}-${fallbackIdx}` : `idx-${fallbackIdx}`);
+  };
+
+  const handleResumeStream = async () => {
+    setIsStreamPaused(false);
+    setQueuedEventsCount(0);
+    try {
+      const res = await fetchLiveSystemLogs(100);
+      if (res && res.status === 'success') {
+        prevTotalMonitoredRef.current = res.total_events_monitored || res.events?.length || 0;
+        setLiveData(res);
+      }
+    } catch (err) {
+      console.error("Error resuming live stream:", err);
+    }
+  };
+
+  const toggleLiveShap = (evt, fallbackIdx) => {
+    const key = getEventKey(evt, fallbackIdx);
+    setExpandedLiveKeys((prev) => {
+      const next = new Set(prev);
+      const isCurrentlyOpen = next.has(key);
+      if (isCurrentlyOpen) {
+        next.delete(key);
+        if (next.size === 0 && isStreamPausedRef.current) {
+          handleResumeStream();
+        }
+      } else {
+        next.add(key);
+        if (autoPauseOnInspect) {
+          setIsStreamPaused(true);
+        }
+      }
+      return next;
+    });
+  };
+
+  const toggleHistoricalShap = (evt, fallbackIdx) => {
+    const key = getEventKey(evt, fallbackIdx);
+    setExpandedHistoricalKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const pipelineStages = [
     { title: '1. COLLECTING 24-HOUR WINDOWS LOGS', desc: 'Querying Windows System, Application & Security channels for past 24 hours...' },
@@ -176,7 +581,20 @@ const UploadLogsPage = () => {
         const res = await fetchLiveSystemLogs(100);
         if (res && res.status === 'success') {
           setIsMonitoring(res.is_monitoring);
+
+          // If stream is frozen for in-depth inspection, do not displace the screen or close the card!
+          if (isStreamPausedRef.current) {
+            const currentTotal = prevTotalMonitoredRef.current || 0;
+            const newTotal = res.total_events_monitored || res.events?.length || 0;
+            if (newTotal > currentTotal) {
+              setQueuedEventsCount(newTotal - currentTotal);
+            }
+            return;
+          }
+
+          prevTotalMonitoredRef.current = res.total_events_monitored || res.events?.length || 0;
           setLiveData(res);
+          setQueuedEventsCount(0);
 
           // Detect new anomaly for toast alert
           if (res.anomaly_count > prevAnomalyCountRef.current && prevAnomalyCountRef.current > 0) {
@@ -417,11 +835,13 @@ const UploadLogsPage = () => {
               <button
                 onClick={() => {
                   setActiveTab('live');
-                  setSelectedLiveEvent(newAnomalyToast);
+                  setModalEvent(newAnomalyToast);
+                  toggleLiveShap(newAnomalyToast, 0);
                 }}
-                className="px-3.5 py-1.5 rounded-lg bg-red-500/30 hover:bg-red-500/50 border border-red-500/60 text-xs font-bold text-white transition-all"
+                className="px-3.5 py-1.5 rounded-lg bg-red-500/30 hover:bg-red-500/50 border border-red-500/60 text-xs font-bold text-white transition-all flex items-center gap-1.5"
               >
-                View Details
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Inspect Anomaly</span>
               </button>
               <button
                 onClick={() => setNewAnomalyToast(null)}
@@ -702,18 +1122,22 @@ const UploadLogsPage = () => {
                   </div>
                 </div>
 
+                {/* INCIDENT CORRELATION BANNER */}
+                <IncidentBanner incidents={result24h?.incidents} />
+
                 {/* EVENTS LIST */}
                 <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                   {filteredHistoricalEvents.map((evt, idx) => {
                     const isAnomaly = evt.is_anomaly === 1;
-                    const isSelected = selectedHistoricalEvent?.id === evt.id;
-                    const showRaw = rawViewMap[evt.id || idx];
+                    const evtKey = getEventKey(evt, idx);
+                    const isSelected = expandedHistoricalKeys.has(evtKey);
+                    const showRaw = rawViewMap[evtKey];
                     const timestampStr = evt.time ? `${formatTime(evt.timestamp).split(' ')[0]} ${evt.time}` : formatTime(evt.timestamp);
                     const providerStr = evt.provider || `${evt.source || evt.channel || 'Security'}[${evt.event_id || 4688}]:`;
 
                     return (
                       <div
-                        key={evt.id || idx}
+                        key={evtKey}
                         className={`p-4 rounded-xl border transition-all ${
                           isAnomaly
                             ? 'bg-red-950/20 border-red-500/40 hover:border-red-500/70 shadow-lg glow-red'
@@ -743,6 +1167,17 @@ const UploadLogsPage = () => {
                           </div>
 
                           <div className="flex items-center gap-2">
+                            {evt.correlation_incident_id && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                INCIDENT LINKED ({evt.correlation_incident_id})
+                              </span>
+                            )}
+                            {evt.is_background_telemetry && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-800">
+                                BACKGROUND TELEMETRY
+                              </span>
+                            )}
+
                             <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase ${
                               isAnomaly
                                 ? 'bg-red-500/20 text-red-400 border border-red-500/40'
@@ -817,20 +1252,31 @@ const UploadLogsPage = () => {
                         {/* Action buttons row */}
                         <div className="flex flex-wrap justify-between items-center gap-2 text-xs font-mono">
                           <button
-                            onClick={() => setSelectedHistoricalEvent(isSelected ? null : evt)}
+                            onClick={() => toggleHistoricalShap(evt, idx)}
                             className="text-[#00E5FF] hover:underline font-bold flex items-center gap-1.5"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
                             <span>{isSelected ? 'Hide Analysis' : 'View SHAP Explanation'}</span>
                           </button>
 
-                          <button
-                            onClick={() => toggleRawView(evt.id || idx)}
-                            className="text-slate-400 hover:text-white flex items-center gap-1.5"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>{showRaw ? 'Hide Raw Payload' : 'View Raw Payload'}</span>
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => setModalEvent(evt)}
+                              className="text-slate-400 hover:text-cyan-300 flex items-center gap-1"
+                              title="Open in Distraction-Free Modal"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                              <span>Modal View</span>
+                            </button>
+
+                            <button
+                              onClick={() => toggleRawView(evtKey)}
+                              className="text-slate-400 hover:text-white flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{showRaw ? 'Hide Raw Payload' : 'View Raw Payload'}</span>
+                            </button>
+                          </div>
                         </div>
 
                         {showRaw && (
@@ -852,77 +1298,12 @@ const UploadLogsPage = () => {
 
                         {/* EXPANDED SHAP REASONING CARD */}
                         {isSelected && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="mt-3 p-4 rounded-xl bg-[#040c1a] border border-[#00E5FF]/40 space-y-3 font-mono text-xs"
-                          >
-                            <div className="space-y-1">
-                              <span className="text-[11px] font-mono font-bold text-[#00E5FF] uppercase tracking-wider block">
-                                WHAT HAPPENED?
-                              </span>
-                              <p className="text-slate-200 leading-relaxed font-sans">
-                                {evt.what_happened || evt.description || evt.message || `Windows system event logged from ${providerStr}`}
-                              </p>
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className="text-[11px] font-mono font-bold text-[#FBBF24] uppercase tracking-wider block">
-                                {isAnomaly ? 'WHY WAS THIS EVENT FLAGGED?' : 'WHY IS IT NORMAL?'}
-                              </span>
-                              <p className="text-slate-300 leading-relaxed font-sans">
-                                {evt.why_suspicious || (isAnomaly 
-                                  ? 'Unusual process execution parameters or behavioral deviation detected.'
-                                  : 'This activity is consistent with normal system baseline behavior.')}
-                              </p>
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className="text-[11px] font-mono font-bold text-[#10B981] uppercase tracking-wider block">
-                                RECOMMENDED ACTION:
-                              </span>
-                              <p className="text-slate-300 leading-relaxed font-sans">
-                                {evt.recommended_action || (isAnomaly 
-                                  ? 'Investigate process integrity and verify administrator execution context.'
-                                  : 'No action required. Continue standard operational monitoring.')}
-                              </p>
-                            </div>
-
-                            {isAnomaly && evt.top_3_human_reasons && evt.top_3_human_reasons.length > 0 && (
-                              <div className="pt-2 border-t border-slate-800 space-y-1.5 font-sans">
-                                <span className="text-[10px] font-mono font-bold text-purple-400 uppercase tracking-widest block">
-                                  TOP SHAP CONTRIBUTING FEATURES:
-                                </span>
-                                <ul className="space-y-1 text-slate-300 font-mono text-[11px]">
-                                  {evt.top_3_human_reasons.map((reason, rIdx) => (
-                                    <li key={rIdx} className="flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                      <span>{reason}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-
-                            {evt.feature_contributions && Object.keys(evt.feature_contributions).length > 0 && (
-                              <div className="pt-2 border-t border-slate-800 space-y-1.5">
-                                <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-widest block">
-                                  SHAP FEATURE CONTRIBUTIONS:
-                                </span>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
-                                  {Object.entries(evt.feature_contributions).map(([k, v]) => (
-                                    <div key={k} className="p-1.5 rounded bg-black/50 border border-slate-800/80 flex justify-between items-center">
-                                      <span className="text-slate-400 truncate mr-1">{k}:</span>
-                                      <span className={`font-bold ${v > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                        {v > 0 ? `+${v}` : v}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </motion.div>
+                          <ShapExplanationCard
+                            evt={evt}
+                            isAnomaly={isAnomaly}
+                            providerStr={providerStr}
+                            onOpenModal={(e) => setModalEvent(e)}
+                          />
                         )}
                       </div>
                     );
@@ -978,6 +1359,16 @@ const UploadLogsPage = () => {
                     <option value={10}>10s</option>
                   </select>
                 </div>
+
+                <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 hover:text-white cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoPauseOnInspect}
+                    onChange={(e) => setAutoPauseOnInspect(e.target.checked)}
+                    className="rounded border-slate-700 bg-slate-900 text-[#00E5FF] focus:ring-[#00E5FF] w-3.5 h-3.5"
+                  />
+                  <span>Auto-Pause on SHAP View</span>
+                </label>
 
                 {isMonitoring ? (
                   <button
@@ -1069,6 +1460,41 @@ const UploadLogsPage = () => {
 
           {/* LIVE STREAM FEED */}
           <GlassCard title="LIVE WINDOWS SYSTEM EVENT STREAM" icon={Activity}>
+            {/* INCIDENT CORRELATION BANNER */}
+            <IncidentBanner incidents={liveData?.incidents} />
+
+            {/* STREAM PAUSED NOTIFICATION BANNER */}
+            {isStreamPaused && (
+              <div className="mb-4 p-3.5 rounded-xl bg-gradient-to-r from-amber-950/60 via-amber-900/40 to-slate-950 border border-amber-500/50 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-amber-200 shadow-lg">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                    <Pause className="w-4 h-4 animate-pulse" />
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase tracking-wider text-amber-400 block">
+                      LIVE STREAM FROZEN FOR IN-DEPTH SHAP READING
+                    </span>
+                    <span className="text-slate-300 text-[11px]">
+                      Background log arrivals will not displace or close your active analysis card.
+                      {queuedEventsCount > 0 && (
+                        <span className="ml-2 font-bold text-amber-300">
+                          ({queuedEventsCount} new events waiting in buffer)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleResumeStream}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black uppercase text-[11px] tracking-wider flex items-center gap-2 transition-all shadow-md hover:scale-105"
+                >
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>Resume Live Stream {queuedEventsCount > 0 ? `(+${queuedEventsCount})` : ''}</span>
+                </button>
+              </div>
+            )}
+
             <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1">
               {(!liveData.events || liveData.events.length === 0) ? (
                 <div className="p-12 text-center text-slate-500 font-mono text-xs space-y-3 border border-dashed border-slate-800 rounded-xl">
@@ -1078,8 +1504,9 @@ const UploadLogsPage = () => {
               ) : (
                 liveData.events.map((evt, idx) => {
                   const isAnomaly = evt.is_anomaly === 1;
-                  const isSelected = selectedLiveEvent?.log_id === evt.log_id || selectedLiveEvent?.id === evt.id;
-                  const showRaw = rawViewMap[evt.log_id || idx];
+                  const evtKey = getEventKey(evt, idx);
+                  const isSelected = expandedLiveKeys.has(evtKey);
+                  const showRaw = rawViewMap[evtKey];
 
                   const timestampStr = evt.timestamp 
                     ? (String(evt.timestamp).includes('T') 
@@ -1091,7 +1518,7 @@ const UploadLogsPage = () => {
 
                   return (
                     <div
-                      key={evt.log_id || idx}
+                      key={evtKey}
                       className={`p-4 rounded-xl border transition-all ${
                         isAnomaly
                           ? 'bg-red-950/20 border-red-500/40 hover:border-red-500/70 shadow-lg glow-red'
@@ -1121,6 +1548,17 @@ const UploadLogsPage = () => {
                         </div>
 
                         <div className="flex items-center gap-2">
+                          {evt.correlation_incident_id && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              INCIDENT LINKED ({evt.correlation_incident_id})
+                            </span>
+                          )}
+                          {evt.is_background_telemetry && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-900 border border-slate-800">
+                              BACKGROUND TELEMETRY
+                            </span>
+                          )}
+
                           <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-extrabold uppercase ${
                             isAnomaly
                               ? 'bg-red-500/20 text-red-400 border border-red-500/40'
@@ -1195,20 +1633,31 @@ const UploadLogsPage = () => {
                       {/* Action buttons row */}
                       <div className="flex flex-wrap justify-between items-center gap-2 text-xs font-mono">
                         <button
-                          onClick={() => setSelectedLiveEvent(isSelected ? null : evt)}
+                          onClick={() => toggleLiveShap(evt, idx)}
                           className="text-[#00E5FF] hover:underline font-bold flex items-center gap-1.5"
                         >
                           <Sparkles className="w-3.5 h-3.5" />
                           <span>{isSelected ? 'Hide Analysis' : 'View SHAP Explanation'}</span>
                         </button>
 
-                        <button
-                          onClick={() => toggleRawView(evt.log_id || idx)}
-                          className="text-slate-400 hover:text-white flex items-center gap-1.5"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>{showRaw ? 'Hide Raw Payload' : 'View Raw Payload'}</span>
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setModalEvent(evt)}
+                            className="text-slate-400 hover:text-cyan-300 flex items-center gap-1.5 transition-colors"
+                            title="Open in Distraction-Free Modal"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            <span>Modal View</span>
+                          </button>
+
+                          <button
+                            onClick={() => toggleRawView(evtKey)}
+                            className="text-slate-400 hover:text-white flex items-center gap-1.5"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{showRaw ? 'Hide Raw Payload' : 'View Raw Payload'}</span>
+                          </button>
+                        </div>
                       </div>
 
                       {showRaw && (
@@ -1230,77 +1679,12 @@ const UploadLogsPage = () => {
 
                       {/* EXPANDED SHAP ANALYSIS BOX */}
                       {isSelected && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="mt-3 p-4 rounded-xl bg-[#040c1a] border border-[#00E5FF]/40 space-y-3 font-mono text-xs"
-                        >
-                          <div className="space-y-1">
-                            <span className="text-[11px] font-mono font-bold text-[#00E5FF] uppercase tracking-wider block">
-                              WHAT HAPPENED?
-                            </span>
-                            <p className="text-slate-200 leading-relaxed font-sans">
-                              {evt.what_happened || evt.description || `Windows system event logged from ${providerStr}`}
-                            </p>
-                          </div>
-
-                          <div className="space-y-1">
-                            <span className="text-[11px] font-mono font-bold text-[#FBBF24] uppercase tracking-wider block">
-                              {isAnomaly ? 'WHY WAS THIS EVENT FLAGGED?' : 'WHY IS IT NORMAL?'}
-                            </span>
-                            <p className="text-slate-300 leading-relaxed font-sans">
-                              {evt.why_suspicious || (isAnomaly 
-                                ? 'Unusual process execution parameters or behavioral deviation detected.'
-                                : 'This activity is consistent with normal system baseline behavior.')}
-                            </p>
-                          </div>
-
-                          <div className="space-y-1">
-                            <span className="text-[11px] font-mono font-bold text-[#10B981] uppercase tracking-wider block">
-                              RECOMMENDED ACTION:
-                            </span>
-                            <p className="text-slate-300 leading-relaxed font-sans">
-                              {evt.recommended_action || (isAnomaly 
-                                ? 'Investigate process integrity and verify administrator execution context.'
-                                : 'No action required. Continue standard operational monitoring.')}
-                            </p>
-                          </div>
-
-                          {isAnomaly && evt.top_3_human_reasons && evt.top_3_human_reasons.length > 0 && (
-                            <div className="pt-2 border-t border-slate-800 space-y-1.5 font-sans">
-                              <span className="text-[10px] font-mono font-bold text-purple-400 uppercase tracking-widest block">
-                                TOP SHAP CONTRIBUTING FEATURES:
-                              </span>
-                              <ul className="space-y-1 text-slate-300 font-mono text-[11px]">
-                                {evt.top_3_human_reasons.map((reason, rIdx) => (
-                                  <li key={rIdx} className="flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                    <span>{reason}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                          {evt.feature_contributions && Object.keys(evt.feature_contributions).length > 0 && (
-                            <div className="pt-2 border-t border-slate-800 space-y-1.5">
-                              <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-widest block">
-                                SHAP FEATURE CONTRIBUTIONS:
-                              </span>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
-                                {Object.entries(evt.feature_contributions).map(([k, v]) => (
-                                  <div key={k} className="p-1.5 rounded bg-black/50 border border-slate-800/80 flex justify-between items-center">
-                                    <span className="text-slate-400 truncate mr-1">{k}:</span>
-                                    <span className={`font-bold ${v > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                      {v > 0 ? `+${v}` : v}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
+                        <ShapExplanationCard
+                          evt={evt}
+                          isAnomaly={isAnomaly}
+                          providerStr={providerStr}
+                          onOpenModal={(e) => setModalEvent(e)}
+                        />
                       )}
                     </div>
                   );
@@ -1310,6 +1694,9 @@ const UploadLogsPage = () => {
           </GlassCard>
         </div>
       )}
+
+      {/* FULL-SCREEN SHAP INSPECTION MODAL */}
+      <ShapInspectionModal evt={modalEvent} onClose={() => setModalEvent(null)} />
     </div>
   );
 };

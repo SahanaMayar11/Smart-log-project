@@ -139,6 +139,33 @@ const AnomalyDetectionPage = () => {
   const [pasteResult, setPasteResult] = useState(null);
   const [pasteError, setPasteError] = useState(null);
 
+  const FEATURE_NAME_HUMAN = {
+    'Event Frequency': 'Burst Velocity',
+    'Sequence Length': 'Message Complexity',
+    'Error Count': 'Operational Errors',
+    'Error Pattern': 'Security Denial Pattern',
+    'Login Attempts': 'Logon Volume',
+    'Failed Login Attempts': 'Logon Failures',
+    'Warning Count': 'Warning Alerts',
+    'Unknown Events': 'Uncommon Signatures',
+    'event_frequency': 'Burst Velocity',
+    'sequence_length': 'Message Complexity',
+    'error_count': 'Operational Errors',
+    'error_pattern': 'Security Denial Pattern',
+    'login_attempts': 'Logon Volume',
+    'failed_login_attempts': 'Logon Failures',
+    'warning_count': 'Warning Alerts',
+    'unknown_events': 'Uncommon Signatures'
+  };
+
+  const formatFactorText = (reasonText) => {
+    if (!reasonText) return '';
+    return reasonText
+      .replace(/\(SHAP contribution:\s*[+-]?\d+\.?\d*\)/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   const SAMPLE_PRESETS = [
     {
       label: 'SSH Brute-Force',
@@ -625,13 +652,23 @@ const AnomalyDetectionPage = () => {
                 </p>
                 {/* Top reasons if present */}
                 {pasteResult.top_event.top_3_human_reasons && pasteResult.top_event.top_3_human_reasons.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {pasteResult.top_event.top_3_human_reasons.map((r, i) => (
-                      <div key={i} className="text-[10px] font-mono text-amber-300/90 flex items-start gap-1">
-                        <span>•</span>
-                        <span>{r}</span>
-                      </div>
-                    ))}
+                  <div className="mt-2 space-y-1.5 pt-2 border-t border-slate-800">
+                    <span className="text-[10px] font-mono font-bold uppercase text-amber-400 block">
+                      Contributing Behavioral Factors:
+                    </span>
+                    {pasteResult.top_event.top_3_human_reasons.map((r, i) => {
+                      const cleanR = formatFactorText(r);
+                      const parts = cleanR.split(/ - | — /);
+                      return (
+                        <div key={i} className="text-[11px] font-mono text-amber-200/90 flex items-start gap-1.5">
+                          <span className="text-amber-400 mt-0.5">•</span>
+                          <div>
+                            <strong className="text-white">{parts[0]}</strong>
+                            {parts[1] && <span className="text-amber-300/80 block text-[10px] font-sans mt-0.5">{parts[1]}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -976,12 +1013,19 @@ const AnomalyDetectionPage = () => {
                             Top SHAP Behavioral Contributing Factors:
                           </span>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            {activeReasons.map((reason, idx) => (
-                              <div key={idx} className="p-2 rounded bg-slate-900 border border-red-500/30 text-[11px] font-mono text-red-300">
-                                <span className="text-slate-500 block text-[9px]">FACTOR #{idx + 1}</span>
-                                <span className="font-semibold">{reason}</span>
-                              </div>
-                            ))}
+                            {activeReasons.map((reason, idx) => {
+                              const cleanReason = formatFactorText(reason);
+                              const parts = cleanReason.split(/ - | — /);
+                              const title = parts[0] || cleanReason;
+                              const subtitle = parts.slice(1).join(' - ');
+                              return (
+                                <div key={idx} className="p-2.5 rounded bg-slate-900 border border-red-500/30 text-[11px] font-mono text-red-200">
+                                  <span className="text-slate-500 block text-[9px] uppercase tracking-wider font-bold">FACTOR #{idx + 1}</span>
+                                  <span className="font-semibold text-white block mt-0.5">{title}</span>
+                                  {subtitle && <span className="text-[10px] text-red-300/80 block mt-0.5 font-sans leading-tight">{subtitle}</span>}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -990,16 +1034,17 @@ const AnomalyDetectionPage = () => {
                       {featContribs && Object.keys(featContribs).length > 0 && (
                         <div className="space-y-1.5 pt-1">
                           <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
-                            SHAP Feature Vector Shift (Impact toward Anomaly):
+                            Behavioral Feature Impact toward Anomaly:
                           </span>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {Object.entries(featContribs).slice(0, 4).map(([fName, fVal]) => {
                               const numVal = typeof fVal === 'number' ? fVal : parseFloat(fVal || 0);
                               const isPositive = numVal >= 0;
+                              const humanLabel = FEATURE_NAME_HUMAN[fName] || fName;
                               return (
                                 <div key={fName} className="p-2 rounded bg-slate-900/90 border border-slate-800 text-[10px] font-mono">
                                   <div className="flex justify-between items-center text-slate-400 mb-1">
-                                    <span className="truncate" title={fName}>{fName}</span>
+                                    <span className="truncate text-white font-medium" title={fName}>{humanLabel}</span>
                                     <span className={isPositive ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
                                       {isPositive ? `+${numVal.toFixed(3)}` : numVal.toFixed(3)}
                                     </span>

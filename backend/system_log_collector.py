@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import json
 import time
 import socket
@@ -9,7 +10,7 @@ import ctypes
 import subprocess
 import winreg
 import html
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ctypes import wintypes
 
 # ==============================================================================
@@ -1035,22 +1036,16 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                 except Exception:
                     pass
 
-            # 10. Extract Message / Data dictionary
+            # 10. Extract Message / Data dictionary cleanly using regex to avoid string split artifacts
             data_dict = {}
-            if '<Data' in block:
-                for chunk in block.split('<Data'):
-                    if '>' in chunk and '</Data>' in chunk:
-                        val = chunk.split('>')[1].split('</Data>')[0].strip()
-                        val = html.unescape(val).replace('&#13;&#10;', ' ').replace('&#13;', ' ').replace('&#10;', ' ').replace('&#9;', ' ')
-                        name = ""
-                        if "Name='" in chunk:
-                            name = chunk.split("Name='")[1].split("'")[0]
-                        elif 'Name="' in chunk:
-                            name = chunk.split('Name="')[1].split('"')[0]
-                        if name:
-                            data_dict[name] = val
-                        elif val:
-                            data_dict[f"data_{len(data_dict)}"] = val
+            for m in re.finditer(r"<Data(?:\s+Name=['\"]([^'\"]*)['\"])?>([^<]*)</Data>", block, re.DOTALL):
+                name, val = m.group(1), m.group(2)
+                val = html.unescape(val or '').replace('&#13;&#10;', ' ').replace('&#13;', ' ').replace('&#10;', ' ').replace('&#9;', ' ')
+                val = " ".join(val.replace('\r', ' ').replace('\n', ' ').split())
+                if name:
+                    data_dict[name] = val
+                elif val:
+                    data_dict[f"data_{len(data_dict)}"] = val
 
             # ==================================================================
             # SPECIFIC EVENT TYPE HANDLERS FOR HUMAN-READABLE TELEMETRY
@@ -1186,9 +1181,9 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
 
             # Security 4624: User Logon
             elif event_id == 4624:
-                user_raw = data_dict.get('TargetUserName', 'User')
-                domain = data_dict.get('TargetDomainName', hostname)
-                logon_type = data_dict.get('LogonType', '2')
+                user_raw = str(data_dict.get('TargetUserName', 'User')).replace('</Data', '').strip()
+                domain = str(data_dict.get('TargetDomainName', hostname)).replace('</Data', '').strip()
+                logon_type = str(data_dict.get('LogonType', '2')).strip()
                 desc = f"User {user_raw} logged on successfully to computer {hostname}."
                 clean_msg = f"An account was successfully logged on. Account Name: {user_raw}, Domain: {domain}, Logon Type: {logon_type}."
 
@@ -1207,6 +1202,8 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                     'task': 'Logon',
                     'event_type': 'USER_LOGON',
                     'action': 'User Logon',
+                    'logon_type': logon_type,
+                    'auth_result': 'success',
                     'application': 'Windows Logon',
                     'application_name': 'Windows Logon',
                     'process': 'winlogon.exe',
@@ -1226,10 +1223,13 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
 
             # Security 4625: Failed Logon
             elif event_id == 4625:
-                user_raw = data_dict.get('TargetUserName', 'User')
-                domain = data_dict.get('TargetDomainName', hostname)
+                user_raw = str(data_dict.get('TargetUserName', 'User')).replace('</Data', '').strip()
+                domain = str(data_dict.get('TargetDomainName', hostname)).replace('</Data', '').strip()
+                logon_type = str(data_dict.get('LogonType', '2')).strip()
+                status_code = str(data_dict.get('Status', '0xc000006d')).strip()
+                sub_status = str(data_dict.get('SubStatus', '0xc000006a')).strip()
                 desc = f"Failed logon attempt detected for account {user_raw} on computer {hostname}."
-                clean_msg = f"An account failed to log on. Account Name: {user_raw}, Domain: {domain}."
+                clean_msg = f"An account failed to log on. Account Name: {user_raw}, Domain: {domain}, Status: {status_code}, SubStatus: {sub_status}."
 
                 events.append({
                     'id': f"sec-4625-{record_id}",
@@ -1246,6 +1246,10 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                     'task': 'Logon Attempt',
                     'event_type': 'FAILED_LOGON',
                     'action': 'Logon Failure',
+                    'logon_type': logon_type,
+                    'status_code': status_code,
+                    'sub_status': sub_status,
+                    'auth_result': 'failure',
                     'application': 'Windows Logon',
                     'application_name': 'Windows Logon',
                     'process': 'winlogon.exe',
@@ -1258,6 +1262,85 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                     'status': 'ANOMALY',
                     'is_anomaly': 1,
                     'severity': 'High',
+                    'description': desc,
+                    'message': clean_msg
+                })
+                continue
+
+            # Security 4800: Workstation Locked
+            elif event_id == 4800:
+                user_raw = str(data_dict.get('TargetUserName', 'User')).replace('</Data', '').strip()
+                domain = str(data_dict.get('TargetDomainName', hostname)).replace('</Data', '').strip()
+                desc = f"Workstation was locked by user {user_raw} on computer {hostname}."
+                clean_msg = f"The workstation was locked. Target Account: {user_raw}, Domain: {domain}."
+
+                events.append({
+                    'id': f"sec-4800-{record_id}",
+                    'timestamp': ts,
+                    'time': time_str,
+                    'hostname': hostname,
+                    'computer': hostname,
+                    'channel': channel,
+                    'provider': provider,
+                    'source': 'Windows Security',
+                    'event_id': event_id,
+                    'record_id': record_id,
+                    'level': 'INFORMATION',
+                    'task': 'Lock / Unlock',
+                    'event_type': 'WORKSTATION_LOCKED',
+                    'action': 'Workstation Locked',
+                    'application': 'Windows Lock Screen',
+                    'application_name': 'Windows Lock Screen',
+                    'process': 'logonui.exe',
+                    'process_name': 'logonui.exe',
+                    'pid': exec_pid,
+                    'process_id': exec_pid,
+                    'user': user_raw,
+                    'account_name': user_raw,
+                    'domain': domain,
+                    'status': 'NORMAL',
+                    'is_anomaly': 0,
+                    'severity': 'Normal',
+                    'description': desc,
+                    'message': clean_msg
+                })
+                continue
+
+            # Security 4801: Workstation Unlocked
+            elif event_id == 4801:
+                user_raw = str(data_dict.get('TargetUserName', 'User')).replace('</Data', '').strip()
+                domain = str(data_dict.get('TargetDomainName', hostname)).replace('</Data', '').strip()
+                desc = f"Workstation was unlocked by user {user_raw} on computer {hostname}."
+                clean_msg = f"The workstation was unlocked. Target Account: {user_raw}, Domain: {domain}."
+
+                events.append({
+                    'id': f"sec-4801-{record_id}",
+                    'timestamp': ts,
+                    'time': time_str,
+                    'hostname': hostname,
+                    'computer': hostname,
+                    'channel': channel,
+                    'provider': provider,
+                    'source': 'Windows Security',
+                    'event_id': event_id,
+                    'record_id': record_id,
+                    'level': 'INFORMATION',
+                    'task': 'Lock / Unlock',
+                    'event_type': 'WORKSTATION_UNLOCKED',
+                    'action': 'Workstation Unlocked',
+                    'auth_result': 'success',
+                    'application': 'Windows Lock Screen',
+                    'application_name': 'Windows Lock Screen',
+                    'process': 'logonui.exe',
+                    'process_name': 'logonui.exe',
+                    'pid': exec_pid,
+                    'process_id': exec_pid,
+                    'user': user_raw,
+                    'account_name': user_raw,
+                    'domain': domain,
+                    'status': 'NORMAL',
+                    'is_anomaly': 0,
+                    'severity': 'Normal',
                     'description': desc,
                     'message': clean_msg
                 })
@@ -1377,7 +1460,7 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
             # PowerShell Operational: 40961, 40962, 4104
             elif 'powershell' in channel.lower() or 'powershell' in provider.lower():
                 act = "PowerShell Activity"
-                desc = rendered_msg or f"Windows PowerShell console activity recorded on computer {hostname}."
+                desc = rendered_msg or f"Routine Windows PowerShell engine lifecycle telemetry ({event_id}) recorded on {hostname}."
 
                 events.append({
                     'id': f"ps-{event_id}-{record_id}",
@@ -1392,7 +1475,7 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                     'record_id': record_id,
                     'level': level,
                     'task': 'PowerShell Execution',
-                    'event_type': 'POWERSHELL_ACTIVITY',
+                    'event_type': 'POWERSHELL_TELEMETRY',
                     'action': act,
                     'application': 'Windows PowerShell',
                     'application_name': 'Windows PowerShell',
@@ -1406,6 +1489,41 @@ def parse_wevtutil_xml_snippet(xml_text, default_channel='System'):
                     'severity': 'Normal',
                     'description': desc,
                     'message': desc
+                })
+                continue
+
+            # WLAN AutoConfig: Wireless connectivity status (Normal background telemetry)
+            elif 'wlan-autoconfig' in provider.lower() or 'wlan' in provider.lower():
+                desc = rendered_msg or f"WLAN wireless network interface event {event_id} on {hostname}."
+                clean_msg = f"Wireless network interface event {event_id}. Routine Wi-Fi connection telemetry."
+
+                events.append({
+                    'id': f"net-wlan-{record_id}",
+                    'timestamp': ts,
+                    'time': time_str,
+                    'hostname': hostname,
+                    'computer': hostname,
+                    'channel': channel,
+                    'provider': provider,
+                    'source': 'Windows WLAN AutoConfig',
+                    'event_id': event_id,
+                    'record_id': record_id,
+                    'level': 'INFORMATION',
+                    'task': 'Network Connectivity',
+                    'event_type': 'NETWORK_CONNECTIVITY',
+                    'action': 'Wireless Connectivity Event',
+                    'application': 'Windows Wireless Service',
+                    'application_name': 'Windows Wireless Service',
+                    'process': 'svchost.exe',
+                    'process_name': 'svchost.exe',
+                    'pid': exec_pid,
+                    'process_id': exec_pid,
+                    'user': f"{hostname}\\SYSTEM",
+                    'status': 'NORMAL',
+                    'is_anomaly': 0,
+                    'severity': 'Normal',
+                    'description': desc,
+                    'message': clean_msg
                 })
                 continue
 
@@ -1765,7 +1883,7 @@ def collect_new_windows_events(last_record_ids=None, max_events=100):
 
     # 4. Multi-Channel Native Windows Event Logs
     channel_query_map = {
-        'Security': ('Security', '/q:*[System[(EventID=4688 or EventID=4689 or EventID=4624 or EventID=4625 or EventID=4634)]]'),
+        'Security': ('Security', '/q:*[System[(EventID=4688 or EventID=4689 or EventID=4624 or EventID=4625 or EventID=4634 or EventID=4800 or EventID=4801)]]'),
         'System': ('System', None),
         'Application': ('Application', None),
         'PowerShell': ('Microsoft-Windows-PowerShell/Operational', None),

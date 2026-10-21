@@ -16,6 +16,33 @@ import { Bar } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
+const FEATURE_NAME_HUMAN = {
+  'Event Frequency': 'Log Velocity / Burst Rate',
+  'Sequence Length': 'Message Complexity & Detail',
+  'Error Count': 'Operational Error Volume',
+  'Error Pattern': 'Security Denial Pattern',
+  'Login Attempts': 'Logon Activity Volume',
+  'Failed Login Attempts': 'Repeated Authentication Failures',
+  'Warning Count': 'Cautionary System Warnings',
+  'Unknown Events': 'Uncommon System Signatures',
+  'event_frequency': 'Log Velocity / Burst Rate',
+  'sequence_length': 'Message Complexity & Detail',
+  'error_count': 'Operational Error Volume',
+  'error_pattern': 'Security Denial Pattern',
+  'login_attempts': 'Logon Activity Volume',
+  'failed_login_attempts': 'Repeated Authentication Failures',
+  'warning_count': 'Cautionary System Warnings',
+  'unknown_events': 'Uncommon System Signatures',
+};
+
+const formatFactorText = (reasonText) => {
+  if (!reasonText) return '';
+  return reasonText
+    .replace(/\(SHAP contribution:\s*[+-]?\d+\.?\d*\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 const ShapPage = () => {
   const [explanations, setExplanations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +70,8 @@ const ShapPage = () => {
     explanations.forEach((item) => {
       const contribs = item.feature_contributions || {};
       Object.keys(contribs).forEach((feat) => {
-        totals[feat] = (totals[feat] || 0) + Math.abs(contribs[feat]);
+        const humanName = FEATURE_NAME_HUMAN[feat] || feat;
+        totals[humanName] = (totals[humanName] || 0) + Math.abs(contribs[feat]);
       });
     });
     return totals;
@@ -68,14 +96,14 @@ const ShapPage = () => {
   };
 
   const waterfallContribs = selectedAnomaly?.feature_contributions || {};
-  const waterfallLabels = Object.keys(waterfallContribs);
+  const waterfallLabels = Object.keys(waterfallContribs).map((f) => FEATURE_NAME_HUMAN[f] || f);
   const waterfallValues = Object.values(waterfallContribs);
 
   const waterfallChartData = {
     labels: waterfallLabels,
     datasets: [
       {
-        label: `SHAP Feature Contribution for Event #${selectedAnomaly?.log_id || 0}`,
+        label: `Behavioral Feature Impact for Event #${selectedAnomaly?.log_id || 0}`,
         data: waterfallValues,
         backgroundColor: waterfallValues.map((v) => (v >= 0 ? 'rgba(239, 68, 68, 0.75)' : 'rgba(16, 185, 129, 0.75)')),
         borderColor: waterfallValues.map((v) => (v >= 0 ? '#EF4444' : '#10B981')),
@@ -202,17 +230,25 @@ const ShapPage = () => {
                   <HelpCircle className="w-4 h-4 text-[#EF4444]" /> Why was this detected as an anomaly?
                 </span>
                 <p className="text-red-200 font-sans text-xs leading-relaxed">
-                  {selectedAnomaly.natural_explanation}
+                  {selectedAnomaly.why_suspicious || selectedAnomaly.natural_explanation}
                 </p>
 
                 {selectedAnomaly.top_3_human_reasons && selectedAnomaly.top_3_human_reasons.length > 0 && (
-                  <div className="pt-2 border-t border-[#EF4444]/20 space-y-1 text-[11px] text-red-300 font-sans">
-                    <strong className="text-xs text-white block">Top 3 SHAP Contributing Factors:</strong>
-                    <ol className="list-decimal list-inside space-y-1 pl-1">
-                      {selectedAnomaly.top_3_human_reasons.map((r, idx) => (
-                        <li key={idx} className="leading-tight">{r}</li>
-                      ))}
-                    </ol>
+                  <div className="pt-2 border-t border-[#EF4444]/20 space-y-2 text-[11px] text-red-300 font-sans">
+                    <strong className="text-xs text-white block">Top Contributing Behavioral Factors:</strong>
+                    <div className="space-y-1.5">
+                      {selectedAnomaly.top_3_human_reasons.map((r, idx) => {
+                        const cleanR = formatFactorText(r);
+                        const parts = cleanR.split(/ - | — /);
+                        return (
+                          <div key={idx} className="p-2 rounded bg-black/40 border border-red-500/20 text-xs font-mono">
+                            <span className="text-slate-400 text-[10px] block uppercase font-bold">Factor #{idx + 1}</span>
+                            <span className="text-white font-semibold block">{parts[0]}</span>
+                            {parts[1] && <span className="text-red-300/80 block text-[11px] font-sans mt-0.5">{parts[1]}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -283,7 +319,7 @@ const ShapPage = () => {
                 <p className="text-xs text-slate-200 leading-relaxed font-sans mb-3">{item.what_happened || item.natural_explanation}</p>
 
                 <div className="pt-2 border-t border-slate-800/80 flex justify-between items-center text-[10px] text-[#94A3B8] font-mono">
-                  <span>Top SHAP Feature: <strong className="text-cyan-300">{item.top_reason}</strong></span>
+                  <span>Top Behavioral Factor: <strong className="text-cyan-300">{FEATURE_NAME_HUMAN[item.top_reason] || item.top_reason}</strong></span>
                   <span>Score: {item.anomaly_score}</span>
                 </div>
               </div>

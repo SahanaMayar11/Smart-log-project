@@ -60,20 +60,69 @@ def format_db_row_to_event(row):
     """Formats a SQLite parsed_logs + anomaly + shap row to the exact normalized event schema."""
     item = dict(row)
     is_anomaly = 1 if item.get('is_anomaly') == 1 else 0
-    comp = item.get('computer') or item.get('hostname') or socket.gethostname() or 'Rocky'
-    app_n = item.get('application_name') or item.get('application') or resolve_application_name(item.get('process') or item.get('service'))
-    proc_n = item.get('process_name') or item.get('process') or item.get('service') or 'system.exe'
+    service = str(item.get('service') or item.get('process') or '').lower()
+    source_str = str(item.get('source') or '')
+    channel_str = str(item.get('channel') or '')
+    provider_str = str(item.get('provider') or '')
+
+    is_windows = (
+        item.get('os_type') == 'Windows'
+        or 'microsoft-windows-' in service
+        or 'microsoft-windows-' in provider_str.lower()
+        or 'windows' in source_str.lower()
+        or channel_str in ['Security', 'System', 'Application', 'PowerShell', 'Defender', 'TaskScheduler']
+    )
+
+    is_linux = not is_windows and (
+        item.get('os_type') == 'Linux'
+        or 'sshd' in service
+        or 'sudo' in service
+        or 'kernel' in service
+        or 'systemd' in service
+        or 'cron' in service
+        or 'linux' in source_str.lower()
+    )
+
+    comp = item.get('computer') or item.get('hostname') or (socket.gethostname() if not is_linux else 'server01') or 'server01'
     pid_v = str(item.get('pid') or item.get('process_id') or 'N/A')
-    parent_proc = item.get('parent_process_name') or item.get('parent_process') or item.get('creator_process') or 'explorer.exe'
-    parent_app = item.get('parent_application') or resolve_application_name(parent_proc)
-    parent_pid = item.get('parent_pid') or item.get('creator_pid') or 0
-    u_name = item.get('user') or 'Admin'
-    u_clean = u_name.split('\\')[-1] if '\\' in str(u_name) else str(u_name)
-    dom = item.get('domain') or (u_name.split('\\')[0] if '\\' in str(u_name) else comp) or comp
-    evt_id = item.get('event_id') or 4688
-    chan = item.get('channel') or 'Security'
-    action = item.get('action') or ('Application Started' if evt_id == 4688 else 'Process Terminated' if evt_id == 4689 else 'Event Logged')
-    desc = item.get('description') or item.get('what_happened') or f"{app_n} was executed by {u_clean} on computer {comp}."
+
+    if is_linux:
+        app_n = item.get('application_name') or item.get('application') or item.get('service') or 'Linux Service'
+        proc_n = item.get('process_name') or item.get('process') or item.get('service') or 'sshd'
+        parent_proc = item.get('parent_process_name') or item.get('parent_process') or 'systemd'
+        parent_app = item.get('parent_application') or 'systemd'
+        parent_pid = item.get('parent_pid') or 0
+        u_name = item.get('user') or 'system'
+        u_clean = str(u_name).replace('</Data', '').strip()
+        if '\\' in u_clean:
+            u_clean = u_clean.split('\\')[-1]
+        dom = str(item.get('domain') or comp).replace('</Data', '').strip()
+        evt_id = item.get('event_id') or (1001 if item.get('auth_result') == 'success' else 1002 if item.get('auth_result') == 'failure' else 1000)
+        chan = item.get('channel') or item.get('service') or 'syslog'
+        action = item.get('action') or ('SSH Authentication Succeeded' if 'sshd' in service and is_anomaly == 0 else 'Syslog Event')
+        prov = item.get('provider') or f"Linux-{chan}"
+        source_val = item.get('source') or f"Linux {item.get('service') or 'Syslog'}"
+        source_lbl = item.get('source_label') or f"{comp} — LINUX SERVER"
+        desc = item.get('description') or item.get('what_happened') or f"{app_n} activity on {comp}."
+    else:
+        app_n = item.get('application_name') or item.get('application') or resolve_application_name(item.get('process') or item.get('service'))
+        proc_n = item.get('process_name') or item.get('process') or item.get('service') or 'system.exe'
+        parent_proc = item.get('parent_process_name') or item.get('parent_process') or item.get('creator_process') or 'explorer.exe'
+        parent_app = item.get('parent_application') or resolve_application_name(parent_proc)
+        parent_pid = item.get('parent_pid') or item.get('creator_pid') or 0
+        u_name = item.get('user') or 'Admin'
+        u_clean = str(u_name).replace('</Data', '').strip()
+        if '\\' in u_clean:
+            u_clean = u_clean.split('\\')[-1]
+        dom = str(item.get('domain') or (u_clean.split('\\')[0] if '\\' in str(u_name) else comp) or comp).replace('</Data', '').strip()
+        evt_id = item.get('event_id') or 4688
+        chan = item.get('channel') or 'Security'
+        action = item.get('action') or ('Application Started' if evt_id == 4688 else 'Process Terminated' if evt_id == 4689 else 'Event Logged')
+        prov = item.get('provider') or (item.get('service').split(':')[0] if item.get('service') and '[' in str(item.get('service')) else f"Microsoft-Windows-{chan}")
+        source_val = item.get('source') or f"Windows {chan}"
+        source_lbl = item.get('source_label') or f"{comp} — LOCAL WINDOWS MACHINE"
+        desc = item.get('description') or item.get('what_happened') or f"{app_n} event logged on computer {comp}."
+
     sev = item.get('severity') or ('Critical' if is_anomaly == 1 else 'Normal')
     ts = str(item.get('timestamp') or datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     if 'T' in ts:
@@ -110,23 +159,46 @@ def format_db_row_to_event(row):
 
     raw_desc = item.get('description') or (raw_p.get('description') if isinstance(raw_p, dict) else None)
     if raw_desc and not ('[' in raw_desc and raw_desc.endswith(']')) and not raw_desc.startswith('Microsoft-Windows-'):
-        desc = raw_desc
-    elif action == 'Application Started':
-        desc = f"{app_n} was opened by {u_clean}."
-    elif action == 'Application Closed':
-        desc = f"{app_n} was closed by {u_clean}."
-    elif action in ('Power Source Connected', 'Power Connected'):
-        desc = "AC power was connected. The computer is running on external power."
-    elif action in ('Power Source Disconnected', 'Power Disconnected'):
-        desc = "AC power was disconnected. The computer is running on battery power."
-    else:
-        desc = f"{app_n} event logged on computer {comp}."
+        desc = str(raw_desc).replace('</Data', '').strip()
+    elif not is_linux:
+        if action == 'Application Started':
+            desc = f"{app_n} was opened by {u_clean}."
+        elif action == 'Application Closed':
+            desc = f"{app_n} was closed by {u_clean}."
+        elif action in ('Power Source Connected', 'Power Connected'):
+            desc = "AC power was connected. The computer is running on external power."
+        elif action in ('Power Source Disconnected', 'Power Disconnected'):
+            desc = "AC power was disconnected. The computer is running on battery power."
+        else:
+            desc = f"{app_n} event logged on computer {comp}."
 
     what_happ = item.get('what_happened') or desc
-    if '[' in str(what_happ) or 'Microsoft-Windows-' in str(what_happ):
+    if not is_linux and ('[' in str(what_happ) or 'Microsoft-Windows-' in str(what_happ)):
         what_happ = desc
 
-    prov = item.get('provider') or (item.get('service').split(':')[0] if item.get('service') and '[' in str(item.get('service')) else f"Microsoft-Windows-{chan}")
+    app_source = item.get('application_source') or (f"Windows {chan} Log ({app_n})" if not is_linux else f"Linux {chan} ({app_n})")
+    what_means = item.get('what_it_means') or ("Standard operating system activity recorded in system telemetry." if not is_linux else "Linux system telemetry.")
+    why_flag = item.get('why_flagged') or item.get('why_suspicious') or ('This activity is consistent with normal system baseline behavior.' if is_anomaly == 0 else 'Unusual behavioral deviation detected.')
+    evid = item.get('evidence') or f"Event ID: {evt_id} | Record ID: {item.get('id')} | User: {u_clean} | Host: {comp}"
+    risk_assess = item.get('risk_assessment') or ('Low / Normal: Routine baseline system telemetry.' if is_anomaly == 0 else f"Medium to High: {sev} deviation flagged by unsupervised model.")
+    limitations = item.get('limitations_uncertainty') or (
+        "Log evidence verifies that this event occurred with the recorded attributes at the specified timestamp. "
+        "Telemetry alone cannot establish human intent without corroborating physical presence or surrounding activity."
+    )
+    tech_details = item.get('technical_details')
+    if isinstance(tech_details, str):
+        try:
+            tech_details = json.loads(tech_details)
+        except Exception:
+            tech_details = None
+    if not tech_details:
+        tech_details = {
+            'model_name': 'Isolation Forest',
+            'explanation_status': 'success',
+            'base_value': 0.0,
+            'feature_contributions': feat_contrib or {},
+            'top_3_human_reasons': reasons
+        }
 
     return {
         'id': f"sec-{evt_id}-{item.get('id')}",
@@ -137,13 +209,15 @@ def format_db_row_to_event(row):
         'event_id': evt_id,
         'channel': chan,
         'provider': prov,
-        'source': item.get('source') or f"Windows {chan}",
-        'source_label': item.get('source_label') or f"{comp} — LOCAL WINDOWS MACHINE",
+        'source': source_val,
+        'source_label': source_lbl,
         'computer': comp,
         'host': comp,
         'hostname': comp,
         'application': app_n,
         'application_name': app_n,
+        'service': item.get('service') or proc_n,
+        'log_level': item.get('log_level') or 'INFO',
         'process': proc_n,
         'process_name': proc_n,
         'pid': pid_v,
@@ -164,10 +238,17 @@ def format_db_row_to_event(row):
         'is_anomaly': is_anomaly,
         'description': desc,
         'what_happened': what_happ,
-        'why_suspicious': item.get('why_suspicious') or ('This activity is consistent with normal system baseline behavior.' if is_anomaly == 0 else 'Unusual process execution parameters or behavioral deviation detected.'),
-        'recommended_action': item.get('recommended_action') or ('No action required. Continue standard operational monitoring.' if is_anomaly == 0 else 'Investigate process integrity and verify administrator execution context.'),
+        'application_source': app_source,
+        'what_it_means': what_means,
+        'why_flagged': why_flag,
+        'why_suspicious': why_flag,
+        'evidence': evid,
+        'risk_assessment': risk_assess,
+        'recommended_action': item.get('recommended_action') or ('No action required. Continue standard operational monitoring.' if is_anomaly == 0 else 'Investigate event source and execution context.'),
+        'limitations_uncertainty': limitations,
         'top_3_human_reasons': reasons,
         'feature_contributions': feat_contrib or {},
+        'technical_details': tech_details,
         'message': item.get('message') or desc,
         'raw_process_path': item.get('raw_process_path') or item.get('executable_path', ''),
         'executable_path': item.get('executable_path') or item.get('raw_process_path', ''),
@@ -206,25 +287,72 @@ def process_and_save_log_file(filename, content, n_estimators=100, contamination
     logs_data = []
     for idx, log in enumerate(parsed_logs):
         raw_r = raw_records[idx] if raw_records and idx < len(raw_records) else {}
-        app = raw_r.get('application_name') or raw_r.get('application') or resolve_application_name(log.get('service', 'System'))
-        proc = raw_r.get('process_name') or raw_r.get('process') or log.get('service') or 'system.exe'
-        pid_val = str(raw_r.get('pid') or raw_r.get('process_id') or 'N/A')
-        p_pid = str(raw_r.get('parent_pid') or raw_r.get('creator_pid') or raw_r.get('parent_process_id') or 0)
-        p_proc = raw_r.get('parent_process_name') or raw_r.get('parent_process') or raw_r.get('creator_process') or 'explorer.exe'
-        p_app = raw_r.get('parent_application') or resolve_application_name(p_proc)
-        u_name = raw_r.get('user') or raw_r.get('account_name') or f"{log['hostname']}\\Admin"
-        u_clean = u_name.split('\\')[-1] if '\\' in str(u_name) else str(u_name)
-        d_name = raw_r.get('domain') or (u_name.split('\\')[0] if '\\' in str(u_name) else log['hostname']) or log['hostname']
-        comp_name = raw_r.get('computer') or log['hostname']
-        act = raw_r.get('action') or raw_r.get('event_type') or ('Application Started' if raw_r.get('event_id') == 4688 else 'Process Terminated' if raw_r.get('event_id') == 4689 else 'Event Logged')
-        desc = raw_r.get('description') or f"{app} was started by {u_clean} on computer {comp_name}."
-        raw_p = raw_r.get('raw_process_path') or raw_r.get('executable_path', '')
-        exe_p = raw_r.get('executable_path') or raw_r.get('raw_process_path', '')
-        src = raw_r.get('source', 'Windows Security' if not is_simulated else 'Attack Simulator')
-        src_lbl = raw_r.get('source_label', f"{comp_name} — LOCAL WINDOWS MACHINE" if not is_simulated else f"{comp_name} — SIMULATED DEMONSTRATION")
-        dev = raw_r.get('device', '')
-        chan = raw_r.get('channel', 'Security')
-        evt_id = int(raw_r.get('event_id') or 4688)
+        service_str = str(log.get('service', '')).lower()
+        is_windows_raw = bool(
+            raw_r.get('channel') in ['Security', 'System', 'Application', 'PowerShell', 'Defender', 'TaskScheduler']
+            or str(raw_r.get('source', '')).startswith('Windows')
+            or str(raw_r.get('provider', '')).startswith('Microsoft-Windows-')
+            or raw_r.get('os') == 'Windows 10/11'
+            or raw_r.get('event_type') in ['USER_LOGON', 'FAILED_LOGON', 'PROCESS_START', 'PROCESS_TERMINATION', 'WORKSTATION_LOCKED', 'WORKSTATION_UNLOCKED', 'POWERSHELL_TELEMETRY', 'NETWORK_CONNECTIVITY']
+        )
+        is_windows_log = bool(
+            log.get('os_type') == 'Windows'
+            or 'microsoft-windows-' in service_str
+            or log.get('channel') in ['Security', 'System', 'Application', 'PowerShell', 'Defender', 'TaskScheduler']
+        )
+
+        if is_windows_raw or is_windows_log:
+            is_linux = False
+        else:
+            is_linux = (
+                log.get('os_type') == 'Linux'
+                or 'sshd' in service_str
+                or 'sudo' in service_str
+                or 'kernel' in service_str
+                or 'systemd' in service_str
+                or 'cron' in service_str
+            )
+
+        if is_linux:
+            app = log.get('service') or 'Linux Service'
+            proc = log.get('service') or 'sshd'
+            pid_val = str(log.get('pid') or raw_r.get('pid') or 'N/A')
+            p_pid = '0'
+            p_proc = 'systemd'
+            p_app = 'systemd'
+            u_clean = str(log.get('user') or raw_r.get('user') or 'system').replace('</Data', '').strip()
+            d_name = str(log.get('hostname') or 'server01').replace('</Data', '').strip()
+            comp_name = log.get('hostname') or 'server01'
+            act = log.get('action') or ('SSH Authentication Succeeded' if log.get('auth_result') == 'success' else 'SSH Authentication Failed' if log.get('auth_result') == 'failure' else 'Syslog Event')
+            desc = log.get('description') or f"{app} activity recorded on {comp_name}."
+            raw_p = raw_r.get('raw_process_path', f"/usr/sbin/{proc}")
+            exe_p = raw_r.get('executable_path', f"/usr/sbin/{proc}")
+            src = f"Linux {log.get('service', 'Syslog')}" if not is_simulated else 'Attack Simulator'
+            src_lbl = f"{comp_name} — LINUX SERVER" if not is_simulated else f"{comp_name} — SIMULATED DEMONSTRATION"
+            dev = raw_r.get('device', 'eth0')
+            chan = 'syslog'
+            evt_id = int(raw_r.get('event_id') or (1001 if log.get('auth_result') == 'success' else 1002 if log.get('auth_result') == 'failure' else 1000))
+        else:
+            app = raw_r.get('application_name') or raw_r.get('application') or resolve_application_name(log.get('service', 'System'))
+            proc = raw_r.get('process_name') or raw_r.get('process') or log.get('service') or 'system.exe'
+            pid_val = str(raw_r.get('pid') or raw_r.get('process_id') or log.get('pid') or 'N/A')
+            p_pid = str(raw_r.get('parent_pid') or raw_r.get('creator_pid') or raw_r.get('parent_process_id') or 0)
+            p_proc = raw_r.get('parent_process_name') or raw_r.get('parent_process') or raw_r.get('creator_process') or 'explorer.exe'
+            p_app = raw_r.get('parent_application') or resolve_application_name(p_proc)
+            u_name = str(raw_r.get('user') or raw_r.get('account_name') or f"{log['hostname']}\\Admin").replace('</Data', '').strip()
+            u_clean = u_name.split('\\')[-1] if '\\' in str(u_name) else str(u_name)
+            d_name = str(raw_r.get('domain') or (u_name.split('\\')[0] if '\\' in str(u_name) else log['hostname']) or log['hostname']).replace('</Data', '').strip()
+            comp_name = raw_r.get('computer') or log['hostname']
+            act = raw_r.get('action') or raw_r.get('event_type') or ('Application Started' if raw_r.get('event_id') == 4688 else 'Process Terminated' if raw_r.get('event_id') == 4689 else 'Event Logged')
+            desc = log.get('description') or raw_r.get('description') or f"{app} was started by {u_clean} on computer {comp_name}."
+            raw_p = raw_r.get('raw_process_path') or raw_r.get('executable_path', '')
+            exe_p = raw_r.get('executable_path') or raw_r.get('raw_process_path', '')
+            src = raw_r.get('source', 'Windows Security' if not is_simulated else 'Attack Simulator')
+            src_lbl = raw_r.get('source_label', f"{comp_name} — LOCAL WINDOWS MACHINE" if not is_simulated else f"{comp_name} — SIMULATED DEMONSTRATION")
+            dev = raw_r.get('device', '')
+            chan = raw_r.get('channel', 'Security')
+            evt_id = int(raw_r.get('event_id') or 4688)
+
         rec_id = int(raw_r.get('record_id') or (start_log_id + idx))
         t_str = raw_r.get('time') or (str(log['timestamp']).split('T')[1].split('.')[0] if 'T' in str(log['timestamp']) else str(log['timestamp'])[-8:])
         stat = 'ANOMALY' if detections[idx]['is_anomaly'] == 1 else 'NORMAL'
@@ -274,6 +402,13 @@ def process_and_save_log_file(filename, content, n_estimators=100, contamination
             sh.get('why_suspicious', ''),
             sh.get('recommended_action', ''),
             json.dumps(sh.get('top_3_human_reasons', [])),
+            sh.get('application_source', ''),
+            sh.get('what_it_means', ''),
+            sh.get('why_flagged', ''),
+            sh.get('evidence', ''),
+            sh.get('risk_assessment', ''),
+            sh.get('limitations_uncertainty', ''),
+            json.dumps(sh.get('technical_details', {})),
             is_simulated
         ))
 
@@ -292,8 +427,10 @@ def process_and_save_log_file(filename, content, n_estimators=100, contamination
     cursor.executemany('''
         INSERT INTO shap_explanations (
             file_id, log_id, feature_contributions, top_reason, natural_explanation,
-            what_happened, why_suspicious, recommended_action, top_3_human_reasons, is_simulated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            what_happened, why_suspicious, recommended_action, top_3_human_reasons,
+            application_source, what_it_means, why_flagged, evidence,
+            risk_assessment, limitations_uncertainty, technical_details, is_simulated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', shaps_data)
 
     conn.commit()
@@ -303,6 +440,60 @@ def process_and_save_log_file(filename, content, n_estimators=100, contamination
 
 
 # API Endpoints
+
+@app.route('/', methods=['GET'])
+def root_index():
+    """Root landing endpoint for the backend server."""
+    if request.headers.get('Accept', '').find('text/html') != -1:
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Smart-Log Backend API</title>
+            <style>
+                body { background: #0B1220; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                .card { background: #0F172A; border: 1px solid #1E293B; border-radius: 16px; padding: 40px; max-width: 600px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+                .badge { background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; display: inline-block; margin-bottom: 16px; }
+                h1 { color: #FFFFFF; margin: 0 0 10px 0; font-size: 24px; }
+                p { color: #94A3B8; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0; }
+                .btn { background: #00E5FF; color: #0B1220; padding: 12px 28px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 14px; display: inline-block; transition: all 0.2s; }
+                .btn:hover { background: #38bdf8; transform: translateY(-2px); }
+                .endpoints { margin-top: 28px; padding-top: 20px; border-top: 1px solid #1E293B; text-align: left; }
+                .endpoints h3 { font-size: 12px; color: #64748B; text-transform: uppercase; margin: 0 0 10px 0; letter-spacing: 1px; }
+                .endpoints a { color: #38BDF8; font-family: monospace; font-size: 13px; text-decoration: none; display: block; margin: 6px 0; }
+                .endpoints a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <span class="badge">● Backend Online</span>
+                <h1>Smart-Log Python Backend API</h1>
+                <p>The Flask API server is running successfully on <strong>port 5000</strong>. If you are looking for the interactive React dashboard, launch or navigate to the frontend server:</p>
+                <a href="http://localhost:3000" class="btn">Open Frontend Dashboard (Port 3000)</a>
+                <div class="endpoints">
+                    <h3>Available API Endpoints</h3>
+                    <a href="/api/dashboard/stats">GET /api/dashboard/stats</a>
+                    <a href="/api/detection/results">GET /api/detection/results</a>
+                    <a href="/api/logs/parsed">GET /api/logs/parsed</a>
+                    <a href="/api/test/scenarios">GET /api/test/scenarios</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        ''', 200
+
+    return jsonify({
+        'status': 'online',
+        'service': 'Smart-Log Backend API',
+        'message': 'Flask Backend is running on port 5000. Open the frontend dashboard at http://localhost:3000',
+        'version': '1.0.0',
+        'endpoints': {
+            'dashboard_stats': '/api/dashboard/stats',
+            'detection_results': '/api/detection/results',
+            'parsed_logs': '/api/logs/parsed',
+            'scenarios': '/api/test/scenarios'
+        }
+    }), 200
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -390,7 +581,9 @@ def analyze_system_logs():
         cursor.execute('''
             SELECT p.*,
                    a.is_anomaly, a.anomaly_score, a.severity,
-                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons
+                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons,
+                   s.application_source, s.what_it_means, s.why_flagged, s.evidence,
+                   s.risk_assessment, s.limitations_uncertainty, s.technical_details, s.feature_contributions
             FROM parsed_logs p
             JOIN anomaly_results a ON p.id = a.log_id
             LEFT JOIN shap_explanations s ON p.id = s.log_id
@@ -431,8 +624,14 @@ def analyze_system_logs():
 
             historical_events.append(formatted_evt)
 
-        total_logs = len(historical_events)
-        anomaly_count = sum(1 for e in historical_events if e['is_anomaly'] == 1)
+        # Apply evidence-based Windows Authentication incident correlation
+        from incident_correlator import WindowsAuthenticationCorrelator
+        corr_res = WindowsAuthenticationCorrelator.correlate_events(historical_events)
+        correlated_events = corr_res['correlated_events']
+        incidents = corr_res['incidents']
+
+        total_logs = len(correlated_events)
+        anomaly_count = sum(1 for e in correlated_events if e['is_anomaly'] == 1)
         normal_count = total_logs - anomaly_count
 
         top_shap_features = [
@@ -472,7 +671,10 @@ def analyze_system_logs():
             'level_distribution': level_distribution,
             'timeline_chart': timeline_chart,
             'top_shap_features': top_shap_features,
-            'historical_events': historical_events,
+            'historical_events': correlated_events,
+            'events': correlated_events,
+            'incidents': incidents,
+            'has_active_attack_pattern': corr_res['has_active_attack_pattern'],
             'model': 'IsolationForest',
             'features': 8,
             'shap': True
@@ -502,7 +704,9 @@ def get_historical_system_logs():
         cursor.execute('''
             SELECT p.*,
                    a.is_anomaly, a.anomaly_score, a.severity,
-                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons, s.feature_contributions
+                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons, s.feature_contributions,
+                   s.application_source, s.what_it_means, s.why_flagged, s.evidence,
+                   s.risk_assessment, s.limitations_uncertainty, s.technical_details
             FROM parsed_logs p
             JOIN anomaly_results a ON p.id = a.log_id AND p.file_id = a.file_id
             LEFT JOIN shap_explanations s ON p.id = s.log_id AND p.file_id = s.file_id
@@ -512,7 +716,11 @@ def get_historical_system_logs():
         rows = cursor.fetchall()
         conn.close()
 
-        historical_events = [format_db_row_to_event(r) for r in rows]
+        raw_events = [format_db_row_to_event(r) for r in rows]
+
+        from incident_correlator import WindowsAuthenticationCorrelator
+        corr_res = WindowsAuthenticationCorrelator.correlate_events(raw_events)
+        historical_events = corr_res['correlated_events']
         total_logs = len(historical_events)
         anomaly_count = sum(1 for e in historical_events if e.get('is_anomaly') == 1)
         normal_count = total_logs - anomaly_count
@@ -523,6 +731,8 @@ def get_historical_system_logs():
             'total_logs': total_logs,
             'normal_count': normal_count,
             'anomaly_count': anomaly_count,
+            'incidents': corr_res['incidents'],
+            'has_active_attack_pattern': corr_res['has_active_attack_pattern'],
             'historical_events': historical_events
         }), 200
     except Exception as e:
@@ -613,7 +823,9 @@ class LiveMonitorManager:
                         cursor.execute('''
                             SELECT p.*,
                                    a.is_anomaly, a.anomaly_score, a.severity,
-                                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons
+                                   s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons,
+                                   s.application_source, s.what_it_means, s.why_flagged, s.evidence,
+                                   s.risk_assessment, s.limitations_uncertainty, s.technical_details, s.feature_contributions
                             FROM parsed_logs p
                             JOIN anomaly_results a ON p.id = a.log_id AND p.file_id = a.file_id
                             LEFT JOIN shap_explanations s ON p.id = s.log_id AND p.file_id = s.file_id
@@ -658,6 +870,9 @@ def get_live_system_logs():
         tot_mon = live_monitor.total_monitored
         buf_len = len(live_monitor.live_buffer)
 
+    from incident_correlator import WindowsAuthenticationCorrelator
+    corr_res = WindowsAuthenticationCorrelator.correlate_events(events)
+
     from system_log_collector import get_system_environment_metadata
     sys_env = get_system_environment_metadata()
 
@@ -684,7 +899,9 @@ def get_live_system_logs():
         'scanned_channels': live_monitor.scanned_channels,
         'unavailable_channels': live_monitor.unavailable_channels,
         'admin_warning': live_monitor.admin_warning,
-        'events': events
+        'incidents': corr_res['incidents'],
+        'has_active_attack_pattern': corr_res['has_active_attack_pattern'],
+        'events': corr_res['correlated_events']
     }), 200
 
 @app.route('/api/system-logs/monitor/start', methods=['POST'])
@@ -881,8 +1098,11 @@ def get_parsed_logs():
 
     query = '''
         SELECT p.id, p.timestamp, p.hostname, p.service, p.log_level, p.event_type, p.message,
-               a.is_anomaly, a.anomaly_score, a.severity,
-               s.what_happened, s.why_suspicious, s.recommended_action
+               p.channel, p.event_id, p.record_id, p.application, p.application_name,
+               p.user, p.domain, p.computer, p.action, p.description,
+               a.is_anomaly, a.anomaly_score, a.severity, a.consensus_state,
+               s.what_happened, s.why_suspicious, s.recommended_action,
+               s.top_3_human_reasons, s.risk_assessment, s.what_it_means, s.feature_contributions
         FROM parsed_logs p
         JOIN anomaly_results a ON p.id = a.log_id AND p.file_id = a.file_id
         LEFT JOIN shap_explanations s ON p.id = s.log_id AND p.file_id = s.file_id
@@ -906,8 +1126,32 @@ def get_parsed_logs():
         params.append(limit)
 
     cursor.execute(query, params)
-    logs = [dict(row) for row in cursor.fetchall()]
+    raw_logs = [dict(row) for row in cursor.fetchall()]
     conn.close()
+
+    logs = []
+    for r in raw_logs:
+        item = dict(r)
+        reasons = item.get('top_3_human_reasons')
+        if isinstance(reasons, str):
+            try:
+                item['top_3_human_reasons'] = json.loads(reasons)
+            except Exception:
+                item['top_3_human_reasons'] = []
+        elif not isinstance(reasons, list):
+            item['top_3_human_reasons'] = []
+
+        feat_c = item.get('feature_contributions')
+        if isinstance(feat_c, str):
+            try:
+                item['feature_contributions'] = json.loads(feat_c)
+            except Exception:
+                item['feature_contributions'] = {}
+        elif not isinstance(feat_c, dict):
+            item['feature_contributions'] = {}
+
+        logs.append(item)
+
     return jsonify(logs), 200
 
 
@@ -1014,6 +1258,8 @@ def get_shap_explanations():
     query = '''
         SELECT s.log_id, s.feature_contributions, s.top_reason, s.natural_explanation,
                s.what_happened, s.why_suspicious, s.recommended_action, s.top_3_human_reasons,
+               s.application_source, s.what_it_means, s.why_flagged, s.evidence,
+               s.risk_assessment, s.limitations_uncertainty, s.technical_details,
                a.is_anomaly, a.anomaly_score, a.severity, p.message, p.service, p.timestamp, p.hostname
         FROM shap_explanations s
         JOIN anomaly_results a ON s.log_id = a.log_id AND s.file_id = a.file_id
@@ -1046,6 +1292,13 @@ def get_shap_explanations():
                 item['top_3_human_reasons'] = []
         elif not isinstance(reasons, list):
             item['top_3_human_reasons'] = []
+
+        tech = item.get('technical_details')
+        if isinstance(tech, str):
+            try:
+                item['technical_details'] = json.loads(tech)
+            except Exception:
+                item['technical_details'] = {}
 
         explanations.append(item)
 
